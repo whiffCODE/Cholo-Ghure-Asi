@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+apps/*/node_modules/
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+apps/*/.env
+apps/*/.env.*
+apps/*/!.env.example
+
+# Build outputs
+.next/
+dist/
+build/
+coverage/
+
+# Local files
+.DS_Store
+Thumbs.db
+*.log
