@@ -29,17 +29,17 @@ export function Navbar() {
   const [open, setOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-[1000] border-b border-border/70 bg-background/90 backdrop-blur-xl">
+    <header className="sticky top-0 z-1000 border-b border-border/70 bg-background/90 backdrop-blur-xl">
       <nav
         aria-label="Main navigation"
-        className="mx-auto flex min-h-[72px] max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8"
+        className="mx-auto flex min-h-18 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8"
       >
         <Link
           href="/"
           className="flex shrink-0 items-center gap-2.5"
           onClick={() => setOpen(false)}
         >
-          <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-rose-800 text-lg font-black text-amber-100 shadow-sm">
+          <span className="flex h-25 w-25 items-center justify-center overflow-hidden">
             <img
               src="/assets/cga_logo.png"
               alt=""
@@ -49,15 +49,6 @@ export function Navbar() {
               }}
             />
             <span className="sr-only">Cholo Ghure Asi</span>
-          </span>
-
-          <span className="leading-tight">
-            <span className="block text-sm font-black tracking-tight sm:text-base">
-              Cholo Ghure Asi
-            </span>
-            <span className="block text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-              Kolkata Puja Guide
-            </span>
           </span>
         </Link>
 
