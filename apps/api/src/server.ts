@@ -7,6 +7,10 @@ import cookieParser from "cookie-parser";
 import pandalRoutes from "./routes/pandals";
 import authRoutes from "./routes/auth";
 
+import friendsRoutes from "./routes/friends";
+import groupsRoutes from "./routes/groups";
+
+
 const app = express();
 
 const PORT = Number(process.env.PORT ?? 4000);
@@ -37,6 +41,11 @@ app.get("/health", (_req, res) => {
 
 app.use("/api/pandals", pandalRoutes);
 app.use("/api/auth", authRoutes);
+
+
+app.use("/api/friends", friendsRoutes);
+app.use("/api/groups", groupsRoutes);
+
 
 app.use(
   (
