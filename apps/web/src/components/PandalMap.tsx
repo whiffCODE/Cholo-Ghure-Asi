@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -22,6 +21,8 @@ import {
 } from "lucide-react";
 
 type Region = "North" | "Central" | "South";
+type RegionFilter = Region | "All";
+type Coordinates = [number, number];
 
 type Pandal = {
   _id?: string;
@@ -49,7 +50,12 @@ type StartPoint = {
 type MapStop = Pandal | StartPoint;
 
 type Props = {
-  initialRegion?: Region | "All";
+  initialRegion?: RegionFilter;
+};
+
+/** Required props for the map route-fitting component. */
+type FitRouteProps = {
+  points: Coordinates[];
 };
 
 const START: StartPoint = {
@@ -61,7 +67,7 @@ const START: StartPoint = {
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
-const REGION_OPTIONS: Array<Region | "All"> = [
+const REGION_OPTIONS: RegionFilter[] = [
   "All",
   "North",
   "Central",
@@ -72,7 +78,29 @@ function isStartPoint(stop: MapStop): stop is StartPoint {
   return !("slug" in stop);
 }
 
+function isValidCoordinate(stop: MapStop): boolean {
+  return (
+    Number.isFinite(stop.latitude) &&
+    Number.isFinite(stop.longitude) &&
+    Math.abs(stop.latitude) <= 90 &&
+    Math.abs(stop.longitude) <= 180
+  );
+}
+
 function makePinIcon(label: string, isStart = false) {
+  // Escape text before inserting it into Leaflet's HTML-based divIcon.
+  const safeLabel = label.replace(/[&<>"']/g, (character) => {
+    const entities: Record<string, string> = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    };
+
+    return entities[character];
+  });
+
   return L.divIcon({
     className: "",
     html: `
@@ -89,7 +117,7 @@ function makePinIcon(label: string, isStart = false) {
         font-weight:800;
         border:3px solid #fff;
         box-shadow:0 3px 12px rgba(0,0,0,.3);
-      ">${label}</div>
+      ">${safeLabel}</div>
     `,
     iconSize: [34, 34],
     iconAnchor: [17, 17],
@@ -98,11 +126,10 @@ function makePinIcon(label: string, isStart = false) {
 }
 
 function haversineKm(a: MapStop, b: MapStop): number {
-  const radians = (degrees: number) => degrees * Math.PI / 180;
+  const radians = (degrees: number) => (degrees * Math.PI) / 180;
 
   const latitudeDifference = radians(b.latitude - a.latitude);
   const longitudeDifference = radians(b.longitude - a.longitude);
-
   const latitudeA = radians(a.latitude);
   const latitudeB = radians(b.latitude);
 
@@ -119,7 +146,7 @@ function getTravelAdvice(distanceKm: number) {
   if (distanceKm < 2) {
     return {
       title: "Chup chap haat bara",
-      description: "Close enough for a walk.",
+      description: "Close enough for a walk. Save the toto fare!",
       kind: "walk" as const,
     };
   }
@@ -128,7 +155,7 @@ function getTravelAdvice(distanceKm: number) {
     return {
       title: "Bhai metro kore jabo",
       description:
-        "Check the nearest useful metro station and actual transit route.",
+        "Check the nearest useful metro station and actual transit route before leaving.",
       kind: "metro" as const,
     };
   }
@@ -137,14 +164,14 @@ function getTravelAdvice(distanceKm: number) {
     return {
       title: "Bhai gaar fete jabe, toto dar kora!",
       description:
-        "Compare road travel and metro options before you leave.",
+        "Compare road travel with metro options, especially during Puja traffic.",
       kind: "road" as const,
     };
   }
 
   return {
     title: "Let's go!",
-    description: "Check the route before starting.",
+    description: "Check your route before starting.",
     kind: "walk" as const,
   };
 }
@@ -163,20 +190,47 @@ function MapResizeHandler() {
   return null;
 }
 
-function FitRoute({
-  points,
-}: {
-  points: Array<[number, number]>;
-}) {
+function FitRoute({ points }: FitRouteProps) {
   const map = useMap();
 
   useEffect(() => {
-    if (points.length > 0) {
-      map.fitBounds(points, {
-        padding: [35, 35],
-        maxZoom: 15,
+    if (points.length === 0) return;
+
+    let cancelled = false;
+    let frame = 0;
+
+    map.whenReady(() => {
+      frame = window.requestAnimationFrame(() => {
+        if (cancelled) return;
+
+        const container = map.getContainer();
+
+        if (!container.isConnected || !map.getPane("overlayPane")) return;
+
+        map.invalidateSize({ pan: false });
+
+        if (points.length === 1) {
+          map.setView(points[0], Math.min(map.getZoom(), 15), {
+            animate: false,
+          });
+          return;
+        }
+
+        map.fitBounds(points, {
+          padding: [35, 35],
+          maxZoom: 15,
+          animate: false,
+        });
       });
-    }
+    });
+
+    return () => {
+      cancelled = true;
+
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+      }
+    };
   }, [map, points]);
 
   return null;
@@ -186,13 +240,9 @@ export default function PandalMap({
   initialRegion = "All",
 }: Props) {
   const [pandals, setPandals] = useState<Pandal[]>([]);
-  const [region, setRegion] = useState<Region | "All">(
-    initialRegion
-  );
+  const [region, setRegion] = useState<RegionFilter>(initialRegion);
   const [search, setSearch] = useState("");
-  const [selectedSlug, setSelectedSlug] = useState<string | null>(
-    null
-  );
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -208,10 +258,9 @@ export default function PandalMap({
         setLoading(true);
         setError("");
 
-        const response = await fetch(
-          `${API_URL}/api/pandals`,
-          { signal: controller.signal }
-        );
+        const response = await fetch(`${API_URL}/api/pandals`, {
+          signal: controller.signal,
+        });
 
         if (!response.ok) {
           throw new Error(`API returned status ${response.status}`);
@@ -220,7 +269,14 @@ export default function PandalMap({
         const data: ApiResponse = await response.json();
 
         setPandals(
-          Array.isArray(data.pandals) ? data.pandals : []
+          Array.isArray(data.pandals)
+            ? data.pandals.filter(
+                (pandal) =>
+                  typeof pandal.slug === "string" &&
+                  typeof pandal.name === "string" &&
+                  isValidCoordinate(pandal)
+              )
+            : []
         );
       } catch (cause) {
         if (
@@ -262,49 +318,36 @@ export default function PandalMap({
     });
   }, [pandals, region, search]);
 
-  const selected = filtered.find(
-    (pandal) => pandal.slug === selectedSlug
-  ) ?? null;
+  const selected =
+    filtered.find((pandal) => pandal.slug === selectedSlug) ?? null;
 
   const selectedIndex = selected
     ? filtered.findIndex((pandal) => pandal.slug === selected.slug)
     : -1;
 
   const previousStop: MapStop =
-    selectedIndex > 0
-      ? filtered[selectedIndex - 1]
-      : START;
+    selectedIndex > 0 ? filtered[selectedIndex - 1] : START;
 
   const selectedDistance = selected
     ? haversineKm(previousStop, selected)
     : null;
 
-  const routePoints = useMemo<Array<[number, number]>>(
-    () => [
+  const visibleRoute = useMemo<Coordinates[]>(() => {
+    return [
       [START.latitude, START.longitude],
       ...filtered.map(
-        (pandal) =>
-          [pandal.latitude, pandal.longitude] as [number, number]
+        (pandal): Coordinates => [
+          pandal.latitude,
+          pandal.longitude,
+        ]
       ),
-    ],
-    [filtered]
-  );
+    ];
+  }, [filtered]);
 
-  const validPandals = filtered.filter(
-    (pandal) =>
-      Number.isFinite(pandal.latitude) &&
-      Number.isFinite(pandal.longitude) &&
-      Math.abs(pandal.latitude) <= 90 &&
-      Math.abs(pandal.longitude) <= 180
+  const routePoints = useMemo<Coordinates[]>(
+    () => visibleRoute,
+    [visibleRoute]
   );
-
-  const visibleRoute: Array<[number, number]> = [
-    [START.latitude, START.longitude],
-    ...validPandals.map(
-      (pandal) =>
-        [pandal.latitude, pandal.longitude] as [number, number]
-    ),
-  ];
 
   return (
     <section className="space-y-5">
@@ -325,7 +368,7 @@ export default function PandalMap({
         <select
           value={region}
           onChange={(event) =>
-            setRegion(event.target.value as Region | "All")
+            setRegion(event.target.value as RegionFilter)
           }
           aria-label="Filter by region"
           className="rounded-xl border border-border bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-rose-600"
@@ -415,7 +458,7 @@ export default function PandalMap({
             </Popup>
           </Marker>
 
-          {validPandals.map((pandal, index) => (
+          {filtered.map((pandal, index) => (
             <Marker
               key={pandal.slug}
               position={[pandal.latitude, pandal.longitude]}
@@ -431,10 +474,7 @@ export default function PandalMap({
 
                 <p>{pandal.address}</p>
                 <p>Region: {pandal.region} Kolkata</p>
-
-                <p>
-                  Metro: {pandal.nearestMetro || "Not listed"}
-                </p>
+                <p>Metro: {pandal.nearestMetro || "Not listed"}</p>
 
                 <a
                   href={`https://www.google.com/maps/dir/?api=1&destination=${pandal.latitude},${pandal.longitude}`}
@@ -447,7 +487,7 @@ export default function PandalMap({
             </Marker>
           ))}
 
-          {/* Visual connection only, not a navigable road route */}
+          {/* Visual connection only, not a verified road route */}
           <Polyline
             positions={visibleRoute}
             pathOptions={{
@@ -462,8 +502,8 @@ export default function PandalMap({
 
       <p className="text-xs leading-relaxed text-muted-foreground">
         The dashed line connects locations in the displayed order.
-        Distances are straight-line estimates, not verified walking
-        or driving distances. Actual road routing will be integrated
+        Distances are straight-line estimates, not verified walking or
+        driving distances. Actual road routing will be integrated
         separately.
       </p>
 
@@ -495,9 +535,7 @@ export default function PandalMap({
               <p className="text-xs text-muted-foreground">
                 Previous displayed stop
               </p>
-              <p className="mt-1 font-semibold">
-                {previousStop.name}
-              </p>
+              <p className="mt-1 font-semibold">{previousStop.name}</p>
             </div>
 
             <div className="rounded-xl border border-rose-200/70 bg-background/70 p-3 dark:border-rose-900">
@@ -549,7 +587,7 @@ export default function PandalMap({
 
             {selected.nearestMetro && (
               <a
-                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selected.nearestMetro + ", Kolkata Metro Station")}`}
+                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${selected.nearestMetro}, Kolkata Metro Station`)}`}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-3 text-sm font-semibold hover:bg-accent"

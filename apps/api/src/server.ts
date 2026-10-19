@@ -9,6 +9,7 @@ import authRoutes from "./routes/auth";
 
 import friendsRoutes from "./routes/friends";
 import groupsRoutes from "./routes/groups";
+import socialRoutes from "./routes/social";
 
 
 const app = express();
@@ -45,6 +46,8 @@ app.use("/api/auth", authRoutes);
 
 app.use("/api/friends", friendsRoutes);
 app.use("/api/groups", groupsRoutes);
+
+app.use("/api/social", socialRoutes);
 
 
 app.use(
